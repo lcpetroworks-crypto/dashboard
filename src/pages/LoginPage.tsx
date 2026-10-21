@@ -1,7 +1,7 @@
 import React, { useState } from "react";
 import { Navigate } from "react-router-dom";
 import { Loader2 } from "lucide-react";
-import { entrar, registrar } from "../servicos/contexto";
+import { entrar, pedirNovaSenha, registrar } from "../servicos/contexto";
 import { useContexto } from "../store/useContexto";
 
 export function LoginPage() {
@@ -125,6 +125,21 @@ export function LoginPage() {
               {enviando && <Loader2 size={16} className="animate-spin" />}
               {modo === "registrar" ? (enviando ? "Enviando…" : "Pedir acesso") : (enviando ? "Entrando…" : "Entrar")}
             </button>
+            {modo === "entrar" && (
+              <button type="button" className="text-center text-[13px] text-[var(--color-blue)] hover:underline cursor-pointer"
+                onClick={async () => {
+                  setErro(null);
+                  if (!email.trim()) return setErro("Escreva o seu e-mail acima e clique de novo em “Esqueci minha senha”.");
+                  try {
+                    await pedirNovaSenha(email);
+                    setEnviado("Se este e-mail tiver conta, chega uma mensagem com o link para definir a nova senha.");
+                  } catch (err) {
+                    setErro(err instanceof Error ? err.message : String(err));
+                  }
+                }}>
+                Esqueci minha senha
+              </button>
+            )}
             <p className="text-center text-[13px] text-[var(--color-neutral-600)]">
               {modo === "entrar" ? "Ainda não tem acesso? " : "Já tem conta? "}
               <button type="button" className="font-semibold text-[var(--color-blue)] hover:underline cursor-pointer"

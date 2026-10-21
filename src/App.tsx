@@ -8,6 +8,7 @@ import { DashboardPage } from "./pages/DashboardPage";
 import { LiteraturePage } from "./pages/LiteraturePage";
 import { LoginPage } from "./pages/LoginPage";
 import { ProjectSelectionPage } from "./pages/ProjectSelectionPage";
+import { RedefinirSenhaPage } from "./pages/RedefinirSenhaPage";
 import { SampleDetailPage } from "./pages/SampleDetailPage";
 import { SampleFormPage } from "./pages/SampleFormPage";
 import { SamplesListPage } from "./pages/SamplesListPage";
@@ -30,6 +31,7 @@ function App() {
       <Routes>
         <Route path="/" element={<Navigate to="/dashboard" replace />} />
         <Route path="/login" element={<LoginPage />} />
+        <Route path="/redefinir-senha" element={<RedefinirSenhaPage />} />
         <Route path="/projetos" element={<RequerLogin><ProjectSelectionPage /></RequerLogin>} />
         <Route element={<RequerLogin><Shell /></RequerLogin>}>
           <Route path="/dashboard" element={<RequerContexto><DashboardPage /></RequerContexto>} />

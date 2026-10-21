@@ -29,6 +29,18 @@ export async function registrar(d: { nome: string; email: string; senha: string;
   return !data.session
 }
 
+/** Link de "esqueci minha senha": o Supabase manda um e-mail que abre /redefinir-senha deste dashboard. */
+export async function pedirNovaSenha(email: string) {
+  const { error } = await supabase.auth.resetPasswordForEmail(email.trim(), { redirectTo: `${window.location.origin}/redefinir-senha` })
+  if (error) throw new Error(/rate|seconds/i.test(error.message) ? 'Muitos pedidos seguidos: espere um minuto e tente de novo.' : error.message)
+}
+
+/** Define a senha na sessão temporária aberta pelo link do e-mail (convite ou recuperação). */
+export async function definirSenha(senha: string) {
+  const { error } = await supabase.auth.updateUser({ password: senha })
+  if (error) throw new Error(/password/i.test(error.message) ? 'Senha fraca: use pelo menos 8 caracteres, com letras e números.' : error.message)
+}
+
 export async function sair() {
   await supabase.auth.signOut()
 }
