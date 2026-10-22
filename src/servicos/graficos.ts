@@ -103,14 +103,14 @@ export function montarPedido(d: DadosEnsaio, c: ConfigGraficos, modo: Modo, form
 }
 
 /** POST /permeabilidade/grafico com o token da sessão; devolve a imagem ou lança o erro em português */
-export async function pedirGrafico(corpo: string, sinal?: AbortSignal): Promise<Blob> {
+export async function pedirGrafico(corpo: string, sinal?: AbortSignal, rota = "permeabilidade/grafico"): Promise<Blob> {
   if (!URL_GRAFICOS) throw new Error("Falta o endereço do serviço de gráficos (VITE_URL_GRAFICOS).");
   const { data } = await supabase.auth.getSession();
   const token = data.session?.access_token;
   if (!token) throw new Error("Sua sessão expirou: entre de novo para ver os gráficos.");
   let r: Response;
   try {
-    r = await fetch(`${URL_GRAFICOS}/permeabilidade/grafico`, {
+    r = await fetch(`${URL_GRAFICOS}/${rota}`, {
       method: "POST", signal: sinal, body: corpo,
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
     });
@@ -119,7 +119,7 @@ export async function pedirGrafico(corpo: string, sinal?: AbortSignal): Promise<
     if (URL_GRAFICOS.includes('localhost')) {
       const fallbackUrl = URL_GRAFICOS.replace('localhost', '127.0.0.1');
       try {
-        r = await fetch(`${fallbackUrl}/permeabilidade/grafico`, {
+        r = await fetch(`${fallbackUrl}/${rota}`, {
           method: "POST", signal: sinal, body: corpo,
           headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
         });
@@ -147,4 +147,12 @@ export function baixarArquivo(blob: Blob, nome: string) {
   a.download = nome;
   a.click();
   setTimeout(() => URL.revokeObjectURL(url), 1000);
+}
+
+// ---- acidificação: os três gráficos do padrão Origin, montados pelo backend com o que foi GRAVADO ----
+// (curva ΔP × tempo + fases do tratamento). O backend lê o banco com o login de quem pede: o RLS decide.
+export type GraficoAcid = "geral" | "pv" | "apos";
+
+export function pedirGraficoAcidificacao(analiseId: number, qual: GraficoAcid, formato: Formato, dpi: number, sinal?: AbortSignal): Promise<Blob> {
+  return pedirGrafico(JSON.stringify({ analise_id: analiseId, qual, formato, dpi }), sinal, "acidificacao/grafico-salvo");
 }
