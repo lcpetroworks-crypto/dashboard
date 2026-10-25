@@ -1,41 +1,71 @@
 import { forwardRef, useImperativeHandle, useMemo, useRef } from "react";
-import {
-  Bar, BarChart, CartesianGrid, Cell, LabelList, Legend, ResponsiveContainer, Scatter, ScatterChart, Tooltip, XAxis, YAxis,
-} from "recharts";
-import type { PontoPvbt } from "../../tipos/banco";
-import { fmt, fmtExato } from "../../utils/formatacao";
-import { escalaLog, formatarLog } from "../charts/escalaLog";
+import { CartesianGrid, ResponsiveContainer, Scatter, ScatterChart, Tooltip, usePlotArea, XAxis, YAxis } from "recharts";
+import { fmtExato } from "../../utils/formatacao";
 
-export type VisaoComparacao = "barras" | "velocidade";
+export type Marcador = "circle" | "square" | "triangle" | "diamond" | "triangleDown";
 
-// uma cor por amostra (a mesma sequência do padrão Origin usado nos gráficos do backend)
-const CORES = ["#0000FF", "#FF0000", "#008000", "#FF00FF", "#808000", "#000080", "#800080", "#008080", "#800000", "#000000"];
-const MARCADORES = ["circle", "square", "triangle", "diamond", "cross", "star", "wye"] as const;
-const TEXTO = "var(--grafico-texto)";
-
-const rotuloEnsaio = (e: PontoPvbt) =>
-  [e.id_experimento, e.temperatura_nominal_c != null ? `${fmt(e.temperatura_nominal_c, 0)} °C` : null,
-    e.vazao_ml_min != null ? `${fmt(e.vazao_ml_min, 2)} mL/min` : null].filter(Boolean).join(" · ");
+export interface SerieGrafico {
+  id: string
+  nome: string
+  cor: string
+  marcador: Marcador
+  pontos: { x: number; y: number; detalhe: string }[]
+}
 
 export interface ExportarComparacao { baixar: (formato: "png" | "svg", nome: string) => Promise<void> }
 
-/** Gráfico de PVbt para comparar amostras, desenhado no navegador (sem custo no servidor). */
-export const GraficoComparacao = forwardRef<ExportarComparacao, { ensaios: PontoPvbt[]; visao: VisaoComparacao }>(function GraficoComparacao(p, ref) {
+// sequência do padrão Origin (a mesma dos gráficos do backend): preto, magenta, vermelho, azul, verde...
+export const CORES_SERIE = ["#000000", "#FF00FF", "#FF0000", "#0000FF", "#008000", "#808000", "#000080", "#800080", "#008080", "#800000"];
+export const MARCADORES_SERIE: Marcador[] = ["circle", "square", "triangle", "diamond", "triangleDown"];
+
+const TEXTO = "#000000";
+const dec2 = (v: number) => v.toLocaleString("pt-BR", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+/** desenha o marcador (cada forma centrada no ponto) */
+function Forma(p: { forma: Marcador; cx: number; cy: number; cor: string; r?: number }) {
+  const { forma, cx, cy, cor } = p, r = p.r ?? 5.5;
+  if (forma === "square") return <rect x={cx - r} y={cy - r} width={2 * r} height={2 * r} fill={cor} />;
+  if (forma === "triangle") return <polygon points={`${cx},${cy - r * 1.15} ${cx - r * 1.1},${cy + r * 0.9} ${cx + r * 1.1},${cy + r * 0.9}`} fill={cor} />;
+  if (forma === "triangleDown") return <polygon points={`${cx},${cy + r * 1.15} ${cx - r * 1.1},${cy - r * 0.9} ${cx + r * 1.1},${cy - r * 0.9}`} fill={cor} />;
+  if (forma === "diamond") return <polygon points={`${cx},${cy - r * 1.25} ${cx + r * 1.25},${cy} ${cx},${cy + r * 1.25} ${cx - r * 1.25},${cy}`} fill={cor} />;
+  return <circle cx={cx} cy={cy} r={r} fill={cor} />;
+}
+
+/** legenda dentro da área do gráfico, em caixa, como no Origin (dentro do SVG, então sai no PNG/SVG exportado) */
+function LegendaOrigin({ series }: { series: SerieGrafico[] }) {
+  const area = usePlotArea();
+  if (!area || !series.length) return null;
+  const linha = 24, largura = Math.min(area.width - 16, Math.max(150, 62 + Math.max(...series.map((s) => s.nome.length)) * 7.6));
+  return (
+    <g transform={`translate(${area.x + 12},${area.y + 12})`} fontSize={14} fill={TEXTO}>
+      <rect width={largura} height={series.length * linha + 8} fill="#fff" stroke="#000" strokeWidth={1} />
+      {series.map((s, i) => (
+        <g key={s.id} transform={`translate(0,${i * linha + 4 + linha / 2})`}>
+          <line x1={6} x2={36} y1={0} y2={0} stroke="#000" strokeWidth={1} />
+          <Forma forma={s.marcador} cx={21} cy={0} cor={s.cor} r={5} />
+          <text x={44} y={5}>{s.nome}</text>
+        </g>
+      ))}
+    </g>
+  );
+}
+
+/** PVbt × Q (log-log), uma série por grupo de amostras, desenhado no navegador no estilo do Origin. */
+export const GraficoComparacao = forwardRef<ExportarComparacao, { series: SerieGrafico[]; altura?: number }>(function GraficoComparacao(p, ref) {
   const caixa = useRef<HTMLDivElement>(null);
-
-  // cor de cada amostra, estável pela ordem dos códigos
-  const codigos = useMemo(() => [...new Set(p.ensaios.map((e) => e.id_amostra))].sort((a, b) => a.localeCompare(b, "pt-BR", { numeric: true })), [p.ensaios]);
-  const cor = (cod: string) => CORES[codigos.indexOf(cod) % CORES.length];
-
-  const barras = useMemo(() => [...p.ensaios]
-    .sort((a, b) => a.id_amostra.localeCompare(b.id_amostra, "pt-BR", { numeric: true }) || a.id_experimento.localeCompare(b.id_experimento, "pt-BR", { numeric: true }))
-    .map((e) => ({ nome: `${e.id_amostra} · ${e.id_experimento}`, amostra: e.id_amostra, pvbt: Number(e.pvbt), detalhe: rotuloEnsaio(e) })), [p.ensaios]);
-
-  const pontos = useMemo(() => p.ensaios
-    .filter((e) => (e.vel_intersticial_cm_min ?? 0) > 0 && (e.pvbt ?? 0) > 0)
-    .map((e) => ({ x: Number(e.vel_intersticial_cm_min), y: Number(e.pvbt), amostra: e.id_amostra, detalhe: rotuloEnsaio(e) })), [p.ensaios]);
-  const ex = escalaLog(pontos.map((d) => d.x));
-  const ey = escalaLog(pontos.map((d) => d.y));
+  const todos = useMemo(() => p.series.flatMap((s) => s.pontos).filter((d) => d.x > 0 && d.y > 0), [p.series]);
+  // folga em volta dos pontos (nenhum fica em cima da moldura) e, em cima, o espaço da legenda; marcas só nas potências de 10
+  const folga = (vals: number[], extraTopo = 0): { dominio: [number, number]; marcas: number[] } => {
+    const lo = Math.min(...vals) / 1.6;
+    const d0 = Math.log10((Math.max(...vals) * 1.6) / lo);
+    const hi = Math.max(...vals) * 1.6 * 10 ** (extraTopo > 0 ? (extraTopo * d0) / (1 - extraTopo) : 0);
+    const marcas: number[] = [];
+    for (let e = Math.ceil(Math.log10(lo) - 1e-9); 10 ** e <= hi * (1 + 1e-9); e++) marcas.push(10 ** e);
+    return { dominio: [lo, hi], marcas };
+  };
+  const ex = folga(todos.map((d) => d.x));
+  const ey = folga(todos.map((d) => d.y), Math.min(0.5, (p.series.length * 24 + 24) / ((p.altura ?? 520) - 80)));
+  const marcasX = ex.marcas, marcasYTopo = ey.marcas, topoY = ey.dominio;
 
   useImperativeHandle(ref, () => ({
     async baixar(formato, nome) {
@@ -48,12 +78,7 @@ export const GraficoComparacao = forwardRef<ExportarComparacao, { ensaios: Ponto
       copia.setAttribute("height", String(height));
       copia.setAttribute("viewBox", `0 0 ${width} ${height}`);
       copia.style.fontFamily = "Arial, Helvetica, sans-serif";
-      // as cores do tema viram valores fixos, senão o arquivo exportado perde texto e grade
-      const estilo = getComputedStyle(document.documentElement);
-      let xml = new XMLSerializer().serializeToString(copia);
-      xml = xml.replace(/var\((--[a-z0-9-]+)\)/gi, (_, v: string) => estilo.getPropertyValue(v).trim() || "#333");
-      const fundo = `<rect width="100%" height="100%" fill="#ffffff"/>`;
-      xml = xml.replace(/(<svg[^>]*>)/, `$1${fundo}`);
+      let xml = new XMLSerializer().serializeToString(copia).replace(/(<svg[^>]*>)/, `$1<rect width="100%" height="100%" fill="#ffffff"/>`);
       const salvar = (blob: Blob, ext: string) => {
         const url = URL.createObjectURL(blob);
         const a = document.createElement("a");
@@ -73,72 +98,43 @@ export const GraficoComparacao = forwardRef<ExportarComparacao, { ensaios: Ponto
     },
   }), []);
 
-  if (p.visao === "barras") {
-    const altura = Math.max(300, 90 + barras.length * 38);
-    return (
-      <div ref={caixa}>
-        <ResponsiveContainer width="100%" height={altura}>
-          <BarChart data={barras} layout="vertical" margin={{ top: 8, right: 64, bottom: 28, left: 8 }} barCategoryGap="22%">
-            <CartesianGrid stroke="var(--grafico-grade)" strokeDasharray="3 3" horizontal={false} />
-            <XAxis type="number" domain={[0, "dataMax"]} tick={{ fontSize: 11, fill: TEXTO }} stroke="var(--color-neutral-400)"
-              tickFormatter={(v: number) => v.toLocaleString("pt-BR", { maximumSignificantDigits: 3 })}
-              label={{ value: "PVbt (PV)", position: "insideBottom", offset: -14, fontSize: 12, fill: TEXTO, fontWeight: 700 }} />
-            <YAxis type="category" dataKey="nome" width={170} tick={{ fontSize: 11, fill: TEXTO }} stroke="var(--color-neutral-400)" interval={0} />
-            <Tooltip cursor={{ fill: "var(--color-blue-50)" }} content={({ active, payload }) => {
-              const d = active ? (payload?.[0]?.payload as (typeof barras)[number] | undefined) : undefined;
-              return d ? (
-                <div className="rounded-md border border-[var(--color-neutral-300)] bg-white px-3 py-2 text-[12px] shadow-md">
-                  <p className="m-0 font-bold" style={{ color: cor(d.amostra) }}>{d.nome}</p>
-                  <p className="m-0 text-[var(--color-neutral-600)]">{d.detalhe}</p>
-                  <p className="m-0 tabular-nums">PVbt = <strong>{fmtExato(d.pvbt)}</strong></p>
-                </div>
-              ) : null;
-            }} />
-            <Bar dataKey="pvbt" radius={[0, 5, 5, 0]} isAnimationActive={false}>
-              {barras.map((d) => <Cell key={d.nome} fill={cor(d.amostra)} />)}
-              <LabelList dataKey="pvbt" position="right" fontSize={11} fill={TEXTO} formatter={(v: unknown) => fmt(v, 4)} />
-            </Bar>
-          </BarChart>
-        </ResponsiveContainer>
-      </div>
-    );
+  if (!todos.length) {
+    return <p className="m-0 py-16 text-center text-[13px] text-[var(--color-neutral-600)]">As séries não têm ensaios com vazão e PVbt para plotar.</p>;
   }
 
-  if (!pontos.length) {
-    return (
-      <p className="m-0 py-16 text-center text-[13px] text-[var(--color-neutral-600)]">
-        Nenhum ensaio escolhido tem velocidade intersticial (falta a porosidade da amostra). Use a visão "Por amostra".
-      </p>
-    );
-  }
-  const amostrasComPonto = codigos.filter((c) => pontos.some((d) => d.amostra === c));
+  const eixo = { type: "number" as const, scale: "log" as const, allowDataOverflow: true, stroke: "#000", strokeWidth: 1.5 };
   return (
     <div ref={caixa}>
-      <ResponsiveContainer width="100%" height={440}>
-        <ScatterChart margin={{ top: 12, right: 28, bottom: 32, left: 12 }}>
-          <CartesianGrid stroke="var(--grafico-grade)" strokeDasharray="3 3" />
-          <XAxis dataKey="x" type="number" scale="log" domain={ex.dominio} ticks={ex.marcas} tickFormatter={formatarLog} allowDataOverflow
-            tick={{ fontSize: 11, fill: TEXTO }} stroke="var(--color-neutral-400)"
-            label={{ value: "Velocidade intersticial (cm/min)", position: "insideBottom", offset: -16, fontSize: 12, fill: TEXTO, fontWeight: 700 }} />
-          <YAxis dataKey="y" type="number" scale="log" domain={ey.dominio} ticks={ey.marcas} tickFormatter={formatarLog} width={62} allowDataOverflow
-            tick={{ fontSize: 11, fill: TEXTO }} stroke="var(--color-neutral-400)"
-            label={{ value: "PVbt (PV)", angle: -90, position: "insideLeft", fontSize: 12, fill: TEXTO, fontWeight: 700, style: { textAnchor: "middle" } }} />
+      <ResponsiveContainer width="100%" height={p.altura ?? 520}>
+        <ScatterChart margin={{ top: 14, right: 26, bottom: 46, left: 18 }}>
+          <CartesianGrid vertical={false} horizontal={false} />
+          {/* eixos de baixo e da esquerda com números; cima e direita só a moldura, como no Origin */}
+          <XAxis xAxisId="x" dataKey="x" domain={ex.dominio} ticks={marcasX} tickFormatter={dec2} {...eixo}
+            tick={{ fontSize: 14, fill: TEXTO }} tickLine={{ stroke: "#000" }} tickSize={6}
+            label={{ value: "Q (mL/min)", position: "insideBottom", offset: -30, fontSize: 18, fill: TEXTO }} />
+          <XAxis xAxisId="xt" dataKey="x" orientation="top" domain={ex.dominio} ticks={marcasX} {...eixo} tick={false} tickLine={{ stroke: "#000" }} tickSize={6} />
+          <YAxis yAxisId="y" dataKey="y" domain={topoY} ticks={marcasYTopo} tickFormatter={dec2} {...eixo} width={64}
+            tick={{ fontSize: 14, fill: TEXTO }} tickLine={{ stroke: "#000" }} tickSize={6}
+            label={{ value: "PVBT", angle: -90, position: "insideLeft", offset: 6, fontSize: 18, fill: TEXTO, style: { textAnchor: "middle" } }} />
+          <YAxis yAxisId="yr" dataKey="y" orientation="right" domain={topoY} ticks={marcasYTopo} {...eixo} tick={false} tickLine={{ stroke: "#000" }} tickSize={6} width={4} />
           <Tooltip cursor={{ strokeDasharray: "3 3" }} content={({ active, payload }) => {
-            const d = active ? (payload?.[0]?.payload as (typeof pontos)[number] | undefined) : undefined;
+            const d = active ? (payload?.[0]?.payload as (SerieGrafico["pontos"][number] & { serie?: string; cor?: string }) | undefined) : undefined;
             return d ? (
               <div className="rounded-md border border-[var(--color-neutral-300)] bg-white px-3 py-2 text-[12px] shadow-md">
-                <p className="m-0 font-bold" style={{ color: cor(d.amostra) }}>{d.amostra}</p>
+                <p className="m-0 font-bold" style={{ color: d.cor }}>{d.serie}</p>
                 <p className="m-0 text-[var(--color-neutral-600)]">{d.detalhe}</p>
-                <p className="m-0 tabular-nums">v = {fmt(d.x, 4)} cm/min</p>
+                <p className="m-0 tabular-nums">Q = {fmtExato(d.x)} mL/min</p>
                 <p className="m-0 tabular-nums">PVbt = <strong>{fmtExato(d.y)}</strong></p>
               </div>
             ) : null;
           }} />
-          <Legend verticalAlign="top" height={32} iconType="plainline" wrapperStyle={{ fontSize: 12 }} />
-          {amostrasComPonto.map((cod, i) => (
-            <Scatter key={cod} name={cod} data={pontos.filter((d) => d.amostra === cod).sort((a, b) => a.x - b.x)}
-              fill={cor(cod)} stroke={cor(cod)} line={{ strokeWidth: 1.5 }} shape={MARCADORES[i % MARCADORES.length]} isAnimationActive={false} />
+          {p.series.map((s) => (
+            <Scatter key={s.id} name={s.nome} xAxisId="x" yAxisId="y" isAnimationActive={false}
+              data={[...s.pontos].sort((a, b) => a.x - b.x).map((d) => ({ ...d, serie: s.nome, cor: s.cor }))}
+              line={{ stroke: "#000", strokeWidth: 1 }} legendType="none"
+              shape={(q: { cx?: number; cy?: number }) => <Forma forma={s.marcador} cx={q.cx ?? 0} cy={q.cy ?? 0} cor={s.cor} />} />
           ))}
+          <LegendaOrigin series={p.series} />
         </ScatterChart>
       </ResponsiveContainer>
     </div>
