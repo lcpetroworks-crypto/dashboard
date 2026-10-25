@@ -3,14 +3,13 @@ import { BrowserRouter, Navigate, Route, Routes } from "react-router-dom";
 import { Shell } from "./components/layout/Shell";
 import { Carregando } from "./components/ui/base";
 import { supabaseConfigurado } from "./lib/supabase";
-import { AdministracaoPage } from "./pages/AdministracaoPage";
+import { ComparacaoPage } from "./pages/ComparacaoPage";
 import { DashboardPage } from "./pages/DashboardPage";
 import { LiteraturePage } from "./pages/LiteraturePage";
 import { LoginPage } from "./pages/LoginPage";
 import { ProjectSelectionPage } from "./pages/ProjectSelectionPage";
 import { RedefinirSenhaPage } from "./pages/RedefinirSenhaPage";
 import { SampleDetailPage } from "./pages/SampleDetailPage";
-import { SampleFormPage } from "./pages/SampleFormPage";
 import { SamplesListPage } from "./pages/SamplesListPage";
 import { meuPerfil, sair } from "./servicos/contexto";
 import { iniciarAutenticacao, useContexto } from "./store/useContexto";
@@ -36,12 +35,10 @@ function App() {
         <Route element={<RequerLogin><Shell /></RequerLogin>}>
           <Route path="/dashboard" element={<RequerContexto><DashboardPage /></RequerContexto>} />
           <Route path="/amostras" element={<RequerContexto><SamplesListPage /></RequerContexto>} />
-          <Route path="/amostras/nova" element={<RequerContexto><SampleFormPage /></RequerContexto>} />
           <Route path="/amostras/:id" element={<RequerContexto><SampleDetailPage /></RequerContexto>} />
-          <Route path="/amostras/:id/editar" element={<RequerContexto><SampleFormPage /></RequerContexto>} />
+          <Route path="/comparacao" element={<RequerContexto><ComparacaoPage /></RequerContexto>} />
           <Route path="/analises" element={<Navigate to="/amostras" replace />} />
           <Route path="/literatura" element={<RequerContexto><LiteraturePage /></RequerContexto>} />
-          <Route path="/administracao" element={<AdministracaoPage />} />
         </Route>
         <Route path="*" element={<Navigate to="/dashboard" replace />} />
       </Routes>
