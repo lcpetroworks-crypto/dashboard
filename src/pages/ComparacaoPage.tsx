@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useRef, useState } from "react";
 import { BarChart3, Download, LineChart, Search } from "lucide-react";
 import { Aviso, CabecalhoPagina, Carregando, Cartao } from "../components/ui/base";
 import { useConsulta } from "../hooks/useConsulta";
-import { baixarArquivo, pedirComparacaoPvbt, type VisaoComparacao } from "../servicos/graficos";
+import { GraficoComparacao, type ExportarComparacao, type VisaoComparacao } from "../components/pvbt/GraficoComparacao";
 import { listarPvbt } from "../servicos/pvbt";
 import { useContexto } from "../store/useContexto";
 import type { PontoPvbt } from "../tipos/banco";
@@ -41,30 +41,11 @@ export function ComparacaoPage() {
   }, [amostras, busca]);
 
   const selecionadas = amostras.filter((a) => escolhidas.has(a.uuid));
-  // o gráfico é desenhado pelo backend: pede de novo quando a seleção ou a visão mudam
-  const chave = selecionadas.map((a) => a.uuid).join(",");
-  const [imagem, setImagem] = useState<string | null>(null);
-  const [gerando, setGerando] = useState(false);
+  const pontos = selecionadas.flatMap((a) => a.ensaios);
+  const grafico = useRef<ExportarComparacao>(null);
   const [erroGrafico, setErroGrafico] = useState<string | null>(null);
-  useEffect(() => {
-    setErroGrafico(null);
-    if (!chave) { setImagem(null); return; }
-    const ctl = new AbortController();
-    let url: string | null = null;
-    setGerando(true);
-    const t = setTimeout(() => {
-      pedirComparacaoPvbt(chave.split(","), visao, "png", 150, ctl.signal)
-        .then((b) => { url = URL.createObjectURL(b); setImagem(url); })
-        .catch((e) => { if (!ctl.signal.aborted) { setImagem(null); setErroGrafico(mensagemErro(e)); } })
-        .finally(() => { if (!ctl.signal.aborted) setGerando(false); });
-    }, 300);
-    return () => { clearTimeout(t); ctl.abort(); if (url) URL.revokeObjectURL(url); };
-  }, [chave, visao]);
-
-  async function baixar(formato: "png" | "svg" | "pdf") {
-    try { baixarArquivo(await pedirComparacaoPvbt(chave.split(","), visao, formato, 300), `comparacao_pvbt_${visao}.${formato}`); }
-    catch (e) { setErroGrafico(mensagemErro(e)); }
-  }
+  const baixar = (formato: "png" | "svg") =>
+    grafico.current?.baixar(formato, `comparacao_pvbt_${visao}`).catch((e) => setErroGrafico(mensagemErro(e)));
 
   const alternar = (uuid: string) => setEscolhidas((s) => { const n = new Set(s); if (n.has(uuid)) n.delete(uuid); else n.add(uuid); return n; });
 
@@ -126,18 +107,12 @@ export function ComparacaoPage() {
             ) : (
               <div className="flex flex-col gap-4">
                 {erroGrafico && <Aviso tipo="erro">{erroGrafico}</Aviso>}
-                {gerando && !imagem && <Carregando texto="Gerando o gráfico no servidor…" />}
-                {imagem && (
-                  <img src={imagem} alt="Comparação de PVbt entre as amostras escolhidas"
-                    className={`max-w-full h-auto mx-auto transition-opacity ${gerando ? "opacity-50" : ""}`} />
-                )}
-                {imagem && (
-                  <div className="flex justify-center gap-2">
-                    {(["png", "svg", "pdf"] as const).map((f) => (
-                      <button key={f} type="button" className="btn btn-secondary !py-1" onClick={() => baixar(f)}><Download size={14} /> {f.toUpperCase()}</button>
-                    ))}
-                  </div>
-                )}
+                <GraficoComparacao ref={grafico} ensaios={pontos} visao={visao} />
+                <div className="flex justify-center gap-2">
+                  {(["png", "svg"] as const).map((f) => (
+                    <button key={f} type="button" className="btn btn-secondary !py-1" onClick={() => baixar(f)}><Download size={14} /> {f.toUpperCase()}</button>
+                  ))}
+                </div>
               </div>
             )}
           </div>
