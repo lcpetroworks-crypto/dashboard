@@ -29,8 +29,15 @@ RUN printf 'server {\n\
     index index.html;\n\
     gzip on;\n\
     gzip_types text/plain text/css application/json application/javascript text/xml application/xml application/xml+rss text/javascript image/svg+xml;\n\
+    # index.html sempre revalida: cada deploy aparece sem precisar limpar o cache\n\
     location / {\n\
+        add_header Cache-Control "no-cache, must-revalidate" always;\n\
         try_files $uri $uri/ /index.html;\n\
+    }\n\
+    # arquivos do build têm hash no nome: podem ficar em cache por 1 ano\n\
+    location /assets/ {\n\
+        add_header Cache-Control "public, max-age=31536000, immutable" always;\n\
+        try_files $uri =404;\n\
     }\n\
 }\n' > /etc/nginx/conf.d/default.conf
 
@@ -42,3 +49,4 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=5s --retries=3 \
     CMD wget --no-verbose --tries=1 --spider http://127.0.0.1:80/ || exit 1
 
 CMD ["nginx", "-g", "daemon off;"]
+
